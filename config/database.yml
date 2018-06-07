@@ -1,8 +1,12 @@
-<%
+<%=
 
 # This code will try to connect to the first database it finds (either mysql or postgres)
 # This is just an example application so this is ok. Don't try to use this
 # code in production if you are planning to bound more than one databases.
+
+require 'json'
+require 'yaml'
+
 services = JSON.parse(ENV["VCAP_SERVICES"])
 db_service = services.values.flatten.find do |service_attrs|
   service_attrs["label"].include?('mysql') || service_attrs["label"].include?('postgres')
@@ -12,41 +16,31 @@ credentials = db_service['credentials']
 conf={
   username: credentials['user'] || credentials['username'],
   password: credentials['password'],
-  database: credentials['database'] || credentials['dbname'],
+  database: credentials['database'] || credentials['dbname'] || credentials['Protocol'] || db_service['label'],
   host: credentials['host'],
-  port: credentials['port'].to_i
+  port: credentials['port'].to_i,
+  pool: 5
 }
 
-case db_service["label"]
+case db_service['label']
 when /mysql/
-  conf[:adapter] = 'mysql2'
-  conf[:encoding] = 'utf8'
+  conf.merge!({
+    adapter: 'mysql2',
+    encoding: 'utf8',
+    ssl_mode: 'preferred',
+  })
 when /postgres/
-  conf[:adapter] = 'postgresql'
-  conf[:encoding] = 'unicode'
+  conf.merge!({
+    adapter: 'postgresql',
+    encoding: 'unicode',
+    sslmode: 'allow',
+  })
 end
 
-puts conf
+({
+  default: conf,
+  development: conf,
+  test: conf,
+  production: conf
+}).to_json # Use JSON to avoid Psych serializing symbols as :foo
 %>
-
-default: &default
-  adapter: <%= conf[:adapter] %>
-  encoding: <%= conf[:encoding] %>
-  database: <%= conf[:database] %>
-  username: <%= conf[:username] %>
-  password: <%= conf[:password] %>
-  host: <%= conf[:host] %>
-  port: <%= conf[:port] %>
-  pool: 5
-
-development:
-  <<: *default
-
-# Warning: The database defined as "test" will be erased and
-# re-generated from your development database when you run "rake".
-# Do not set this db to the same as development or production.
-test:
-  <<: *default
-
-production:
-  <<: *default

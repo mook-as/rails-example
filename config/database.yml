@@ -8,21 +8,26 @@ require 'json'
 require 'yaml'
 
 services = JSON.parse(ENV["VCAP_SERVICES"])
-db_service = services.values.flatten.find do |service_attrs|
-  service_attrs["label"].include?('mysql') || service_attrs["label"].include?('postgres')
+$db_service = services.values.flatten.find do |service_attrs|
+  %w(mysql postgres mariadb).any? { |db| service_attrs['label'].include? db }
 end
 
-credentials = db_service['credentials']
+credentials = $db_service['credentials']
+
+def get_credential(keys)
+  $db_service['credentials'][keys.find { |k| $db_service['credentials'].include? k }]
+end
+
 conf={
-  username: credentials['user'] || credentials['username'],
-  password: credentials['password'],
-  database: credentials['database'] || credentials['dbname'] || credentials['Protocol'] || db_service['label'],
-  host: credentials['host'],
-  port: credentials['port'].to_i,
-  pool: 5
+  username: get_credential(%w(user username MASTER_USERNAME)),
+  password: get_credential(%w(password MASTER_PASSWORD)),
+  database: get_credential(%w(database dbname Protocol DB_NAME)) || $db_service['label'],
+  host:     get_credential(%w(host ENDPOINT_ADDRESS)),
+  port:     get_credential(%w(port PORT)).to_i,
+  pool:     5
 }
 
-case db_service['label']
+case $db_service['label']
 when /mysql/
   conf.merge!({
     adapter: 'mysql2',
